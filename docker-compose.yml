@@ -1,0 +1,110 @@
+version: '3.3'
+name: tapd-test-network
+services:
+  # LND
+  alice:
+    environment:
+      USERID: ${USERID:-1000}
+      GROUPID: ${GROUPID:-1000}
+      LNCLI_RPCSERVER: localhost:10001
+      LNCLI_MACAROONPATH: /root/.lnd/data/chain/bitcoin/testnet/admin.macaroon
+    stop_grace_period: 2m
+    image: polarlightning/lnd:0.17.3-beta
+    container_name: alice-lnd
+    hostname: alice
+    command: >-
+      lnd --noseedbackup 
+      --trickledelay=5000 
+      --alias=${ALIAS} 
+      --externalip=alice
+      --tlsextradomain=alice-lnd
+      --listen=0.0.0.0:9736 
+      --rpclisten=0.0.0.0:10001 
+      --restlisten=0.0.0.0:8082
+      --tlsautorefresh
+      --rpcmiddleware.enable
+      --bitcoin.node=neutrino
+      --bitcoin.active
+      --bitcoin.testnet
+
+      --neutrino.addpeer=lnd.bitrefill.com
+      --neutrino.addpeer=35.196.85.107
+      --neutrino.addpeer=3.18.26.129
+
+
+      --feeurl=https://assets.nostrassets.com/btc-testnet-fee-estimates.json
+    restart: always
+    volumes:
+      - ./volumes/lnd/alice:/root/.lnd
+    expose:
+      - '8082'
+      - '10001'
+      - '9736'
+    ports:
+      - '8082:8082'
+      - '10001:10001'
+      - '9736:9736'
+    env_file:
+      - .env
+  # Lightning Terminal
+  alice-lit:
+    environment:
+      USERID: ${USERID:-1000}
+      GROUPID: ${GROUPID:-1000}
+    stop_grace_period: 2m
+    image: lightninglabs/lightning-terminal:v0.12.2-alpha
+    container_name: alice-lit
+    hostname: alice-lit
+    command: >-
+      litd 
+      --httpslisten=0.0.0.0:8444
+      --uipassword=${UIPASSWORD}
+      --network=testnet
+      --lnd-mode=remote
+      --remote.lnd.rpcserver=alice-lnd:10001 
+      --remote.lnd.macaroonpath=/home/lit/.lnd/data/chain/bitcoin/testnet/admin.macaroon
+      --remote.lnd.tlscertpath=/home/lit/.lnd/tls.cert
+    depends_on:
+      - alice
+    volumes:
+      - ./volumes/lnd/alice:/home/lit/.lnd
+    restart: always
+    expose:
+      - '8444'
+    ports:
+      - '8444:8444'
+    env_file:
+      - .env
+  #Taproot Assets - to test later
+--- 
+  alice-tap:
+    environment:
+      USERID: ${USERID:-1000}
+      GROUPID: ${GROUPID:-1000}
+    stop_grace_period: 2m
+    image: polarlightning/tapd:0.3.0-alpha.rc1
+    container_name: alice-tap
+    hostname: alice-tap
+    command: >-
+      tapd 
+      --network=testnet 
+      --debuglevel=debug 
+      --rpclisten=0.0.0.0:10029
+      --restlisten=0.0.0.0:8089 
+      --lnd.host=alice-lnd:10001
+      --lnd.macaroonpath=/home/tap/.lnd/data/chain/bitcoin/testnet/admin.macaroon
+      --lnd.tlspath=/home/tap/.lnd/tls.cert
+
+    depends_on:
+      - alice
+    restart: always
+    volumes:
+      - ./volumes/lnd/alice:/home/tap/.lnd
+      - ./volumes/tapd/alice-tap:/home/tap/.tapd
+    expose:
+      - '8089'
+      - '10029'
+    ports:
+      - '8289:8089'
+      - '10029:10029'
+---
