@@ -16,7 +16,6 @@ services:
       lnd --noseedbackup 
       --trickledelay=5000 
       --alias=${ALIAS} 
-      --externalip=alice
       --tlsextradomain=alice-lnd
       --listen=0.0.0.0:9736 
       --rpclisten=0.0.0.0:10001 
@@ -46,37 +45,8 @@ services:
       - '9736:9736'
     env_file:
       - .env
-  # Lightning Terminal
-  alice-lit:
-    environment:
-      USERID: ${USERID:-1000}
-      GROUPID: ${GROUPID:-1000}
-    stop_grace_period: 2m
-    image: lightninglabs/lightning-terminal:v0.12.2-alpha
-    container_name: alice-lit
-    hostname: alice-lit
-    command: >-
-      litd 
-      --httpslisten=0.0.0.0:8444
-      --uipassword=${UIPASSWORD}
-      --network=testnet
-      --lnd-mode=remote
-      --remote.lnd.rpcserver=alice-lnd:10001 
-      --remote.lnd.macaroonpath=/home/lit/.lnd/data/chain/bitcoin/testnet/admin.macaroon
-      --remote.lnd.tlscertpath=/home/lit/.lnd/tls.cert
-    depends_on:
-      - alice
-    volumes:
-      - ./volumes/lnd/alice:/home/lit/.lnd
-    restart: always
-    expose:
-      - '8444'
-    ports:
-      - '8444:8444'
-    env_file:
-      - .env
-  #Taproot Assets - to test later
---- 
+
+
   alice-tap:
     environment:
       USERID: ${USERID:-1000}
@@ -107,4 +77,40 @@ services:
     ports:
       - '8289:8089'
       - '10029:10029'
----
+      
+      
+   # Lightning Terminal
+  alice-lit:
+    environment:
+      USERID: ${USERID:-1000}
+      GROUPID: ${GROUPID:-1000}
+    stop_grace_period: 2m
+    image: lightninglabs/lightning-terminal:v0.12.2-alpha
+    container_name: alice-lit
+    hostname: alice-lit
+    command: >-
+      litd 
+      --httpslisten=0.0.0.0:8444
+      --uipassword=${UIPASSWORD}
+      --network=testnet
+      --lnd-mode=remote
+      --remote.lnd.rpcserver=alice-lnd:10001 
+      --remote.lnd.macaroonpath=/root/.lnd/data/chain/bitcoin/testnet/admin.macaroon
+      --remote.lnd.tlscertpath=/root/.lnd/tls.cert
+      --taproot-assets-mode=remote
+      --remote.taproot-assets.rpcserver=alice-tap:10029 
+      --remote.taproot-assets.macaroonpath=/root/.tapd/data/testnet/admin.macaroon
+      --remote.taproot-assets.tlscertpath=/root/.tapd/tls.cert
+    depends_on:
+      - alice
+      - alice-tap
+    volumes:
+      - ./volumes/lnd/alice:/root/.lnd
+      - ./volumes/tapd/alice-tap:/root/.tapd
+    restart: always
+    expose:
+      - '8444'
+    ports:
+      - '8444:8444'
+    env_file:
+      - .env
