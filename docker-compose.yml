@@ -1,6 +1,41 @@
 version: '3.3'
 name: tapd-test-network
 services:
+  # Bitcoin
+  bitcoin:
+    environment:
+      USERID: ${USERID:-1000}
+      GROUPID: ${GROUPID:-1000}
+    stop_grace_period: 2m
+    image: lightninglabs/bitcoin-core:25
+    container_name: bitcoin
+    hostname: bitcoin
+    cpus: 0.5  # This will limit the service to use at most half of a single CPU
+    mem_limit: 2000m  # This will limit the service to use at most 500MB of memory
+    command: >-
+      bitcoind 
+      --testnet=1
+      --server=1
+      --rpcbind=0.0.0.0
+      --rpcallowip=0.0.0.0/0 
+      --rpcport=18334
+      --prune=3500 
+      --rpcuser=${RPC_USER}
+      --rpcpassword=${RPC_PASSWORD}
+      --zmqpubrawblock=tcp://0.0.0.0:28336
+      --zmqpubrawtx=tcp://0.0.0.0:28337
+    restart: always
+    expose:
+      - '18334'
+      - '28336'
+      - '28337'
+    ports:
+      - '18334:18334'
+      - '28336:28336'
+      - '28337:28337'
+    env_file:
+      - .env
+
   # LND
   alice:
     environment:
@@ -9,32 +44,35 @@ services:
       LNCLI_RPCSERVER: localhost:10001
       LNCLI_MACAROONPATH: /root/.lnd/data/chain/bitcoin/testnet/admin.macaroon
     stop_grace_period: 2m
-    image: polarlightning/lnd:0.17.3-beta
+    image: lightninglabs/lnd:v0.17.4-beta
     container_name: alice-lnd
+    cpus: 0.5  # This will limit the service to use at most half of a single CPU
+    mem_limit: 2000m  # This will limit the service to use at most 500MB of memory
     hostname: alice
     command: >-
       lnd --noseedbackup 
       --trickledelay=5000 
-      --alias=${ALIAS} 
+      --alias=${ALIAS}
+      --tlsautorefresh
       --tlsextradomain=alice-lnd
       --listen=0.0.0.0:9736 
       --rpclisten=0.0.0.0:10001 
       --restlisten=0.0.0.0:8082
-      --tlsautorefresh
       --rpcmiddleware.enable
-      --bitcoin.node=neutrino
       --bitcoin.active
       --bitcoin.testnet
-
-      --neutrino.addpeer=lnd.bitrefill.com
-      --neutrino.addpeer=35.196.85.107
-      --neutrino.addpeer=3.18.26.129
-
-
+      --bitcoin.node=bitcoind
+      --bitcoind.rpchost=bitcoin:18334
+      --bitcoind.rpcuser=${RPC_USER}
+      --bitcoind.rpcpass=${RPC_PASSWORD}
+      --bitcoind.zmqpubrawblock=bitcoin:28336
+      --bitcoind.zmqpubrawtx=bitcoin:28337
       --feeurl=https://assets.nostrassets.com/btc-testnet-fee-estimates.json
     restart: always
     volumes:
       - ./volumes/lnd/alice:/root/.lnd
+    depends_on:
+      - bitcoin
     expose:
       - '8082'
       - '10001'
@@ -52,13 +90,14 @@ services:
       USERID: ${USERID:-1000}
       GROUPID: ${GROUPID:-1000}
     stop_grace_period: 2m
-    image: polarlightning/tapd:0.3.0-alpha.rc1
+    image: lightninglabs/taproot-assets:v0.3.3
     container_name: alice-tap
     hostname: alice-tap
     command: >-
       tapd 
       --network=testnet 
       --debuglevel=debug 
+      --tlsextradomain=alice-tap 
       --rpclisten=0.0.0.0:10029
       --restlisten=0.0.0.0:8089 
       --lnd.host=alice-lnd:10001
@@ -85,7 +124,7 @@ services:
       USERID: ${USERID:-1000}
       GROUPID: ${GROUPID:-1000}
     stop_grace_period: 2m
-    image: lightninglabs/lightning-terminal:v0.12.2-alpha
+    image: lightninglabs/lightning-terminal:v0.12.4-alpha
     container_name: alice-lit
     hostname: alice-lit
     command: >-
@@ -101,6 +140,7 @@ services:
       --remote.taproot-assets.rpcserver=alice-tap:10029 
       --remote.taproot-assets.macaroonpath=/root/.tapd/data/testnet/admin.macaroon
       --remote.taproot-assets.tlscertpath=/root/.tapd/tls.cert
+      --autopilot.disable
     depends_on:
       - alice
       - alice-tap
