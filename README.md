@@ -6,6 +6,9 @@ Done using https://github.com/nostrassets/taproot-docker/tree/main/testnet as st
 Create .env file with following content:
 
 ```
+# Bitcoin
+RPC_USER=rpc_user
+RPC_PASSWORD=rpc_password
 # LND
 ALIAS=your_alias
 # Lightning Terminal
@@ -13,6 +16,8 @@ UIPASSWORD=litui-password-here
 ```
 
 Run ``docker-compose up``
+
+Optional: Run first ``docker-compose up bitcoin`` and wait to be synced with testnet blockchain, after that stop service and run ``docker-compose up`` to run all services with the bitcoin already synced
 
 Open Lightning terminal at ``https://localhost:8444``
 
