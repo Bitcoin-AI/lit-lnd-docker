@@ -10,31 +10,39 @@ services:
     image: lightninglabs/bitcoin-core:25
     container_name: bitcoin
     hostname: bitcoin
-    cpus: 0.5  # This will limit the service to use at most half of a single CPU
-    mem_limit: 2000m  # This will limit the service to use at most 500MB of memory
+    cpus: 0.8  # This will limit the service to use at most half of a single CPU
+    mem_limit: 8000m  # This will limit the service to use at most 500MB of memory
+    healthcheck:
+      test: ["CMD-SHELL", "bitcoin-cli --testnet  --rpcport=18337 --rpcuser=${RPC_USER} --rpcpassword=${RPC_PASSWORD} getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
     command: >-
       bitcoind 
       --testnet=1
       --server=1
       --rpcbind=0.0.0.0
-      --rpcallowip=0.0.0.0/0 
-      --rpcport=18334
+      --rpcallowip=0.0.0.0/0
+      --rpcport=18337
       --prune=3500 
       --rpcuser=${RPC_USER}
       --rpcpassword=${RPC_PASSWORD}
       --zmqpubrawblock=tcp://0.0.0.0:28336
       --zmqpubrawtx=tcp://0.0.0.0:28337
-    restart: always
+    restart: no
     expose:
-      - '18334'
+      - '18337'
       - '28336'
       - '28337'
     ports:
-      - '18334:18334'
+      - '18337:18337'
       - '28336:28336'
       - '28337:28337'
     env_file:
       - .env
+    volumes:
+      - ./volumes/bitcoin/.bitcoin:/home/bitcoin/.bitcoin
 
   # LND
   alice:
@@ -46,9 +54,7 @@ services:
     stop_grace_period: 2m
     image: lightninglabs/lnd:v0.17.4-beta
     container_name: alice-lnd
-    cpus: 0.5  # This will limit the service to use at most half of a single CPU
-    mem_limit: 2000m  # This will limit the service to use at most 500MB of memory
-    hostname: alice
+    hostname: alice-lnd
     command: >-
       lnd --noseedbackup 
       --trickledelay=5000 
@@ -62,17 +68,16 @@ services:
       --bitcoin.active
       --bitcoin.testnet
       --bitcoin.node=bitcoind
-      --bitcoind.rpchost=bitcoin:18334
+      --bitcoind.dir=/home/.bitcoin
+      --bitcoind.rpchost=bitcoin:18337
       --bitcoind.rpcuser=${RPC_USER}
       --bitcoind.rpcpass=${RPC_PASSWORD}
-      --bitcoind.zmqpubrawblock=bitcoin:28336
-      --bitcoind.zmqpubrawtx=bitcoin:28337
-      --feeurl=https://assets.nostrassets.com/btc-testnet-fee-estimates.json
-    restart: always
+      --bitcoind.zmqpubrawblock=tcp://bitcoin:28336
+      --bitcoind.zmqpubrawtx=tcp://bitcoin:28337
+    restart: no
     volumes:
       - ./volumes/lnd/alice:/root/.lnd
-    depends_on:
-      - bitcoin
+      - ./volumes/bitcoin/.bitcoin:/home/.bitcoin
     expose:
       - '8082'
       - '10001'
@@ -83,13 +88,23 @@ services:
       - '9736:9736'
     env_file:
       - .env
-
-
+    healthcheck:
+      test: ["CMD", "lncli", "getinfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    depends_on:
+      bitcoin: 
+        condition: service_healthy
+      
   alice-tap:
     environment:
       USERID: ${USERID:-1000}
       GROUPID: ${GROUPID:-1000}
     stop_grace_period: 2m
+    cpus: 0.2  # This will limit the service to use at most half of a single CPU
+    mem_limit: 2000m  # This will limit the service to use at most 500MB of memory
     image: lightninglabs/taproot-assets:v0.3.3
     container_name: alice-tap
     hostname: alice-tap
@@ -104,9 +119,7 @@ services:
       --lnd.macaroonpath=/home/tap/.lnd/data/chain/bitcoin/testnet/admin.macaroon
       --lnd.tlspath=/home/tap/.lnd/tls.cert
 
-    depends_on:
-      - alice
-    restart: always
+    restart: no
     volumes:
       - ./volumes/lnd/alice:/home/tap/.lnd
       - ./volumes/tapd/alice-tap:/home/tap/.tapd
@@ -114,9 +127,17 @@ services:
       - '8089'
       - '10029'
     ports:
-      - '8289:8089'
+      - '8089:8089'
       - '10029:10029'
-      
+    healthcheck:
+      test: ["CMD", "tapcli", "getinfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    depends_on:
+      alice:
+        condition: service_healthy
       
    # Lightning Terminal
   alice-lit:
@@ -124,6 +145,8 @@ services:
       USERID: ${USERID:-1000}
       GROUPID: ${GROUPID:-1000}
     stop_grace_period: 2m
+    cpus: 0.2  # This will limit the service to use at most half of a single CPU
+    mem_limit: 2000m  # This will limit the service to use at most 500MB of memory
     image: lightninglabs/lightning-terminal:v0.12.4-alpha
     container_name: alice-lit
     hostname: alice-lit
@@ -141,16 +164,18 @@ services:
       --remote.taproot-assets.macaroonpath=/root/.tapd/data/testnet/admin.macaroon
       --remote.taproot-assets.tlscertpath=/root/.tapd/tls.cert
       --autopilot.disable
-    depends_on:
-      - alice
-      - alice-tap
     volumes:
       - ./volumes/lnd/alice:/root/.lnd
       - ./volumes/tapd/alice-tap:/root/.tapd
-    restart: always
+    restart: no
     expose:
       - '8444'
     ports:
       - '8444:8444'
     env_file:
       - .env
+    depends_on:
+      alice:
+        condition: service_healthy
+      alice-tap:
+        condition: service_healthy
